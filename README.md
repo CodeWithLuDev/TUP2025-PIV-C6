@@ -75,7 +75,7 @@ Si hay conflictos, resolvelos antes de seguir.
 
 1. Agregá tus archivos en la carpeta correcta:
 ```bash
-TP/57233 - Roldan Facundo/Unidad 3/TP1/
+TPs/57233 - Roldan Facundo/Unidad 3/TP1/
 ```
 
 2. Hacé commit y push:
