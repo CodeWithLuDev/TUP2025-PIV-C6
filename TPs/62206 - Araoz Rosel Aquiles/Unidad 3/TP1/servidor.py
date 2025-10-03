@@ -3,25 +3,25 @@ from fastapi import FastAPI
 app = FastAPI()
 
 polenta = [{
-    "nombre":"si se meten",
-    "apellido": "con cristina",
-    "edad": 30,
-    "telefono":"3812933939",
+    "nombre":"alex",
+    "apellido": "werner",
+    "edad": 18,
+    "telefono":"3812233939",
     "email":"sisemetenconcristina@andaacomerpolenta.com"
 },
             {
-    "nombre":"si se meten",
-    "apellido": "con cristina",
-    "edad": 30,
-    "telefono":"3812933939",
-    "email":"sisemetenconcristina@andaacomerpolenta.com"
+    "nombre":"alberto",
+    "apellido": "fernandez",
+    "edad": 29,
+    "telefono":"3811133939",
+    "email":"sisemetenconcristina2@andaacomerpolenta.com"
 },
             {
-    "nombre":"si se meten",
-    "apellido": "con cristina",
+    "nombre":"sneijder",
+    "apellido": "mendoza",
     "edad": 30,
-    "telefono":"3812933939",
-    "email":"sisemetenconcristina@andaacomerpolenta.com"
+    "telefono":"38129333439",
+    "email":"sisemetenconcristina912@andaacomerpolenta.com"
 }
 ]
 
