@@ -1,119 +1,91 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import Optional, Dict
-from datetime import datetime, timezone
+from datetime import datetime
 
-app = FastAPI(title="Mini API de Tareas")
+app = FastAPI()
 
-# Estados válidos
+tareas_db = []
 VALID_ESTADOS = {"pendiente", "en_progreso", "completada"}
 
-# Almacenamiento en memoria
-tasks: Dict[int, Dict] = {}
-_next_id = 1  # contador incremental
 
-
-# Schemas (Pydantic) para request bodies
-class TareaCreate(BaseModel):
-    descripcion: str
-    estado: Optional[str] = "pendiente"
-
-
-class TareaUpdate(BaseModel):
-    descripcion: Optional[str] = None
-    estado: Optional[str] = None
-
-
-# --- RUTAS ---
-
+# 🟢 1. Obtener todas las tareas
 @app.get("/tareas")
-def obtener_tareas(estado: Optional[str] = Query(None), texto: Optional[str] = Query(None)):
-    """Devuelve todas las tareas, opcionalmente filtradas por estado y/o por texto en la descripción."""
-    if estado is not None and estado not in VALID_ESTADOS:
-        return JSONResponse({"error": "Estado inválido"}, status_code=400)
-
-    resultado = []
-    for t in tasks.values():
-        if estado is not None and t["estado"] != estado:
-            continue
-        if texto is not None and texto.lower() not in t["descripcion"].lower():
-            continue
-        resultado.append(t)
-    return resultado
+def obtener_tareas(estado: str = None, texto: str = None):
+    resultado = tareas_db
+    if estado:
+        resultado = [t for t in resultado if t["estado"] == estado]
+    if texto:
+        resultado = [t for t in resultado if texto.lower() in t["descripcion"].lower()]
+    return JSONResponse(resultado, status_code=200)
 
 
-@app.post("/tareas", status_code=201)
-def crear_tarea(payload: TareaCreate):
-    """Crea una nueva tarea en memoria. Valida descripción no vacía y estado válido."""
-    global _next_id
+# 🟢 2. Crear una tarea
+@app.post("/tareas")
+async def crear_tarea(request: Request):
+    payload = await request.json()
+    descripcion = payload.get("descripcion", "").strip()
+    estado = payload.get("estado", "pendiente")
 
-    descripcion = (payload.descripcion or "").strip()
     if not descripcion:
-        return JSONResponse({"error": "La descripción no puede estar vacía"}, status_code=400)
-
-    estado = payload.estado or "pendiente"
+        return JSONResponse({"detail": "La descripción no puede estar vacía"}, status_code=422)
     if estado not in VALID_ESTADOS:
-        return JSONResponse({"error": "Estado inválido"}, status_code=400)
+        return JSONResponse({"detail": "Estado inválido"}, status_code=422)
 
-    creado_en = datetime.now(timezone.utc).isoformat()
-    tarea_obj = {
-        "id": _next_id,
+    nueva_tarea = {
+        "id": len(tareas_db) + 1,
         "descripcion": descripcion,
         "estado": estado,
-        "creado_en": creado_en
+        "fecha_creacion": datetime.now().isoformat()
     }
-    tasks[_next_id] = tarea_obj
-    _next_id += 1
-
-    return JSONResponse(content=tarea_obj, status_code=201)
+    tareas_db.append(nueva_tarea)
+    return JSONResponse(nueva_tarea, status_code=201)
 
 
+# 🟢 3. Completar todas las tareas (debe ir ANTES del {id})
 @app.put("/tareas/completar_todas")
 def completar_todas():
-    """Marca todas las tareas existentes como 'completada'."""
-    modificadas = 0
-    for t in tasks.values():
-        if t["estado"] != "completada":
-            t["estado"] = "completada"
-            modificadas += 1
-    return {"modificadas": modificadas, "total": len(tasks)}
+    if not tareas_db:
+        return JSONResponse({"mensaje": "No hay tareas para completar"}, status_code=200)
+    for t in tareas_db:
+        t["estado"] = "completada"
+    return JSONResponse({"mensaje": "Todas las tareas marcadas como completadas"}, status_code=200)
 
 
+# 🟢 4. Actualizar una tarea existente
+@app.put("/tareas/{id}")
+async def actualizar_tarea(id: int, request: Request):
+    payload = await request.json()
+    for tarea in tareas_db:
+        if tarea["id"] == id:
+            if "descripcion" in payload:
+                nueva_desc = payload["descripcion"].strip()
+                if not nueva_desc:
+                    return JSONResponse({"detail": "La descripción no puede estar vacía"}, status_code=422)
+                tarea["descripcion"] = nueva_desc
+            if "estado" in payload:
+                nuevo_estado = payload["estado"]
+                if nuevo_estado not in VALID_ESTADOS:
+                    return JSONResponse({"detail": "Estado inválido"}, status_code=422)
+                tarea["estado"] = nuevo_estado
+            return JSONResponse(tarea, status_code=200)
+    return JSONResponse({"detail": "error: La tarea no existe"}, status_code=404)
+
+
+# 🟢 5. Eliminar una tarea
+@app.delete("/tareas/{id}")
+def eliminar_tarea(id: int):
+    for tarea in tareas_db:
+        if tarea["id"] == id:
+            tareas_db.remove(tarea)
+            return JSONResponse({"mensaje": "Tarea eliminada"}, status_code=200)
+    return JSONResponse({"detail": "error: La tarea no existe"}, status_code=404)
+
+
+# 🟢 6. Resumen de tareas
 @app.get("/tareas/resumen")
-def resumen_estados():
-    """Devuelve contador de tareas por estado."""
-    resumen = {estado: 0 for estado in VALID_ESTADOS}
-    for t in tasks.values():
-        resumen[t["estado"]] += 1
-    # devolver en el orden solicitado (opcional) - aquí devuelvo el dict normalmente
-    return resumen
-
-
-@app.put("/tareas/{tarea_id}")
-def modificar_tarea(tarea_id: int, payload: TareaUpdate):
-    """Modifica una tarea por id. Valida existencia, descripción no vacía y estado válido."""
-    if tarea_id not in tasks:
-        return JSONResponse({"error": "La tarea no existe"}, status_code=404)
-
-    if payload.descripcion is not None:
-        descripcion = payload.descripcion.strip()
-        if not descripcion:
-            return JSONResponse({"error": "La descripción no puede estar vacía"}, status_code=400)
-        tasks[tarea_id]["descripcion"] = descripcion
-
-    if payload.estado is not None:
-        if payload.estado not in VALID_ESTADOS:
-            return JSONResponse({"error": "Estado inválido"}, status_code=400)
-        tasks[tarea_id]["estado"] = payload.estado
-
-    return tasks[tarea_id]
-
-
-@app.delete("/tareas/{tarea_id}")
-def eliminar_tarea(tarea_id: int):
-    """Elimina una tarea por id; si no existe devuelve 404 con mensaje JSON."""
-    if tarea_id not in tasks:
-        return JSONResponse({"error": "La tarea no existe"}, status_code=404)
-    del tasks[tarea_id]
-    return {"message": "Tarea eliminada"}
+def resumen_tareas():
+    resumen = {"pendiente": 0, "en_progreso": 0, "completada": 0}
+    for t in tareas_db:
+        if t["estado"] in resumen:
+            resumen[t["estado"]] += 1
+    return JSONResponse(resumen, status_code=200)
