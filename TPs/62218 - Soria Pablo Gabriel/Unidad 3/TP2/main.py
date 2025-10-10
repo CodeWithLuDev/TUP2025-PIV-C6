@@ -1,5 +1,14 @@
-from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, Field
+try:
+    from fastapi import FastAPI, HTTPException, Query
+    from pydantic import BaseModel, Field
+except Exception as e:
+    # Mensaje claro para el alumno si las dependencias no están instaladas
+    raise RuntimeError(
+        "Faltan dependencias. Instala las requeridas con: \n"
+        "  python -m venv .venv; .\\.venv\\Scripts\\Activate.ps1; pip install -r requirements.txt\n"
+        "o: pip install fastapi pydantic uvicorn requests pytest"
+    ) from e
+
 from typing import List, Optional
 from datetime import datetime
 
