@@ -1,12 +1,11 @@
 try:
     from fastapi import FastAPI, HTTPException, Query
     from pydantic import BaseModel, Field
-except Exception as e:
-    # Mensaje claro para el alumno si las dependencias no están instaladas
-    raise RuntimeError(
-        "Faltan dependencias. Instala las requeridas con: \n"
-        "  python -m venv .venv; .\\.venv\\Scripts\\Activate.ps1; pip install -r requirements.txt\n"
-        "o: pip install fastapi pydantic uvicorn requests pytest"
+except ImportError as e:
+    raise ImportError(
+        "Faltan paquetes requeridos: instala las dependencias con:\n"
+        "  python -m venv .venv; .\\.venv\\Scripts\\Activate.ps1; pip install -r TPs/62218 - Soria Pablo Gabriel/Unidad 3/TP2/requirements.txt\n"
+        "O alternativamente: pip install fastapi pydantic uvicorn requests pytest"
     ) from e
 
 from typing import List, Optional
