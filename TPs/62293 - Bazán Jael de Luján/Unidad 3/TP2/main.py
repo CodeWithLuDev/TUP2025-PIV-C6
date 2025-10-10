@@ -71,8 +71,10 @@ def resumen_tareas():
         resumen[t["estado"]] += 1
     return resumen
 
-@app.put("/tareas/completar_todas")
-def completar_todas():
+from fastapi import Body
+
+@app.put("/tareas/completar_todas", response_model=dict)
+def completar_todas(body: dict = Body(default=None)):
     if not tareas:
         return {"mensaje": "No hay tareas para completar"}
     for t in tareas:
