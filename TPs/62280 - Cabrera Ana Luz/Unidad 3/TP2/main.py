@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from pydantic import BaseModel, Field, validator
 from enum import Enum
 from typing import List, Optional
@@ -19,6 +19,17 @@ class Tarea(BaseModel):
     @validator("descripcion")
     def descripcion_no_vacia(cls, v):
         if not v.strip():
+            raise ValueError("La descripción no puede estar vacía")
+        return v
+
+# Nuevo modelo para actualizaciones parciales
+class TareaActualizar(BaseModel):
+    descripcion: Optional[str] = None
+    estado: Optional[EstadoTarea] = None
+
+    @validator("descripcion")
+    def descripcion_no_vacia(cls, v):
+        if v is not None and not v.strip():
             raise ValueError("La descripción no puede estar vacía")
         return v
 
@@ -52,11 +63,13 @@ def crear_tarea(tarea: Tarea):
     return nueva_tarea
 
 @app.put("/tareas/{id}", response_model=TareaCompleta)
-def actualizar_tarea(id: int, datos: Tarea):
+def actualizar_tarea(id: int, datos: TareaActualizar):
     for t in tareas:
         if t.id == id:
-            t.descripcion = datos.descripcion
-            t.estado = datos.estado
+            if datos.descripcion is not None:
+                t.descripcion = datos.descripcion
+            if datos.estado is not None:
+                t.estado = datos.estado
             return t
     raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
 
@@ -65,7 +78,7 @@ def eliminar_tarea(id: int):
     for i, t in enumerate(tareas):
         if t.id == id:
             tareas.pop(i)
-            return
+            return Response(status_code=204)
     raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
 
 
@@ -77,10 +90,9 @@ def resumen_tareas():
     return resumen
 
 @app.put("/tareas/completar_todas")
-def completar_todas(response: Response):
+def completar_todas(body: dict = Body(default={})):
     if not tareas:
         return {"mensaje": "No hay tareas para completar"}
     for t in tareas:
         t.estado = EstadoTarea.completada
-    response.status_code = 200
     return {"mensaje": "Todas las tareas fueron marcadas como completadas"}
