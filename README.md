@@ -80,8 +80,8 @@ TPs/57233 - Roldan Facundo/Unidad 3/TP1/
 
 2. Hacé commit y push:
 ```bash
-git add .
-git commit -m "Entrega TP1 - Unidad 3"
+git add main.py
+git commit -m "Ejemplo Entrega TP1 - Unidad 3"
 git push origin alumno/57233-Roldan-Facundo
 ```
 
