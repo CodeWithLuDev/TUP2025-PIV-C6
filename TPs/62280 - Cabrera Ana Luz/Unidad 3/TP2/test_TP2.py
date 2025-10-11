@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from main import app, tareas 
+from main import app, tareas
 
 client = TestClient(app)
 
@@ -20,7 +20,7 @@ def test_crear_tarea():
 
 def test_crear_tarea_sin_descripcion():
     response = client.post("/tareas", json={"descripcion": "", "estado": "pendiente"})
-    assert response.status_code == 422  # Validación de Pydantic
+    assert response.status_code == 422
 
 def test_listar_tareas():
     client.post("/tareas", json={"descripcion": "Tarea 1", "estado": "pendiente"})
@@ -43,7 +43,6 @@ def test_eliminar_tarea():
     id_tarea = res.json()["id"]
     response = client.delete(f"/tareas/{id_tarea}")
     assert response.status_code == 204
-    # Verificar que ya no exista
     response = client.get("/tareas")
     assert len(response.json()) == 0
 
