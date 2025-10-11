@@ -24,10 +24,3 @@ def listar_contactos():
     if not contactos:
         raise HTTPException(status_code=404, detail="No hay contactos disponibles.")
     return contactos
-
-@app.get("/contactos/{nombre}")
-def buscar_contacto(nombre: str):
-    for c in contactos:
-        if c["nombre"].lower() == nombre.lower():
-            return c
-    raise HTTPException(status_code=404, detail=f"No se encontró el contacto con nombre: {nombre}")
