@@ -22,7 +22,7 @@ def obtener_tareas(estado: Optional[str] = Query(None), texto: Optional[str] = Q
     resultado = tareas
     if estado:
         if estado not in ESTADOS_VALIDOS:
-            raise HTTPException(status_code=400, detail="Estado inválido")
+            raise HTTPException(status_code=400, detail={"error": "Estado inválido"})
         resultado = [t for t in resultado if t["estado"] == estado]
     if texto:
         resultado = [t for t in resultado if texto.lower() in t["descripcion"].lower()]
@@ -32,7 +32,9 @@ def obtener_tareas(estado: Optional[str] = Query(None), texto: Optional[str] = Q
 def crear_tarea(tarea: Tarea):
     global contador_id
     if tarea.estado not in ESTADOS_VALIDOS:
-        raise HTTPException(status_code=400, detail="Estado inválido")
+        raise HTTPException(status_code=400, detail={"error": "Estado inválido"})
+    if not tarea.descripcion.strip():
+        raise HTTPException(status_code=422, detail={"error": "La descripción no puede estar vacía"})
     nueva_tarea = {
         "id": contador_id,
         "descripcion": tarea.descripcion.strip(),
@@ -48,13 +50,12 @@ def actualizar_tarea(id: int, tarea: Tarea):
     for t in tareas:
         if t["id"] == id:
             if tarea.estado not in ESTADOS_VALIDOS:
-                raise HTTPException(status_code=400, detail="Estado inválido")
-            if not tarea.descripcion.strip():
-                raise HTTPException(status_code=400, detail="La descripción no puede estar vacía")
-            t["descripcion"] = tarea.descripcion.strip()
+                raise HTTPException(status_code=400, detail={"error": "Estado inválido"})
+            if tarea.descripcion.strip() != "":
+                t["descripcion"] = tarea.descripcion.strip()
             t["estado"] = tarea.estado
             return t
-    raise HTTPException(status_code=404, detail="La tarea no existe")
+    raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
 
 @app.delete("/tareas/{id}")
 def eliminar_tarea(id: int):
@@ -62,7 +63,7 @@ def eliminar_tarea(id: int):
         if t["id"] == id:
             tareas.remove(t)
             return {"mensaje": "Tarea eliminada correctamente"}
-    raise HTTPException(status_code=404, detail="La tarea no existe")
+    raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
 
 @app.get("/tareas/resumen")
 def resumen_tareas():
@@ -71,10 +72,8 @@ def resumen_tareas():
         resumen[t["estado"]] += 1
     return resumen
 
-from fastapi import Body
-
-@app.put("/tareas/completar_todas", response_model=dict)
-def completar_todas(body: dict = Body(default=None)):
+@app.put("/tareas/completar_todas", status_code=200)
+def completar_todas():
     if not tareas:
         return {"mensaje": "No hay tareas para completar"}
     for t in tareas:
