@@ -6,12 +6,10 @@ from typing import Optional, List
 
 app = FastAPI()
 
-# ----------------- Base de datos simulada ----------------- #
 tareas_db: List["Tarea"] = []
 contador_id = 1
 ESTADOS_VALIDOS = {"pendiente", "en_progreso", "completada"}
 
-# ----------------- Modelos ----------------- #
 class Tarea(BaseModel):
     id: int
     descripcion: str
@@ -36,7 +34,6 @@ class TareaInput(BaseModel):
             raise ValueError("estado inválido")
         return v
 
-# ----------------- Manejo de errores ----------------- #
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
     return JSONResponse(
@@ -51,7 +48,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={"detail": f"error: {exc.detail}" if exc.status_code in [404, 422] else exc.detail}
     )
 
-# ----------------- Endpoints ----------------- #
 @app.get("/tareas")
 def obtener_tareas(estado: Optional[str] = None, texto: Optional[str] = None):
     resultados = tareas_db
