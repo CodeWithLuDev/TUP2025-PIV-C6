@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -33,5 +32,3 @@ def obtener_contacto(contacto_id: int):
         if contacto["id"] == contacto_id:
             return contacto
  
-
-
