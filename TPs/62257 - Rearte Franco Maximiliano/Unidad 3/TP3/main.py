@@ -1,236 +1,271 @@
+# main.py
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, field_validator
-from typing import List, Literal, Optional
-from datetime import datetime
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 import sqlite3
+import os
+from datetime import datetime, timezone
 
-app = FastAPI()
+# Nombre del archivo de la DB — los tests importan DB_NAME
+DB_NAME = "tareas.db"
 
-# Nombre de la base de datos
-tareas = "tareas.db"
+app = FastAPI(title="API de Tareas Persistentes - TP3 (Rearte)")
 
-# Inicializar base de datos
-def init_db():
-    with sqlite3.connect(tareas) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS tareas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                descripcion TEXT NOT NULL,
-                estado TEXT NOT NULL,
-                prioridad TEXT NOT NULL,
-                fecha_creacion TEXT NOT NULL
-            )
-        """)
-        conn.commit()
+# -----------------------
+# Inicialización / migración
+# -----------------------
+def init_db() -> None:
+    """
+    Crea la base de datos y la tabla 'tareas' si no existen.
+    """
+    create_sql = """
+    CREATE TABLE IF NOT EXISTS tareas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        descripcion TEXT NOT NULL,
+        estado TEXT NOT NULL,
+        fecha_creacion TEXT,
+        prioridad TEXT
+    );
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute(create_sql)
+    conn.commit()
+    conn.close()
 
-# Llamar a init_db al iniciar
+# Inicializar al importar (los tests llaman init_db() también desde la fixture)
 init_db()
 
+# -----------------------
+# Utilidades DB
+# -----------------------
+def get_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {k: row[k] for k in row.keys()}
+
+# -----------------------
+# Constantes de validación
+# -----------------------
+ESTADOS_VALIDOS = {"pendiente", "en_progreso", "completada"}
+PRIORIDADES_VALIDAS = {"baja", "media", "alta"}
+
+# -----------------------
 # Modelos Pydantic
-class TareaModelo(BaseModel):
-    id: int
-    descripcion: str
-    estado: Literal["pendiente", "en_progreso", "completada"]
-    prioridad: Literal["baja", "media", "alta"]
-    fecha_creacion: str
+# -----------------------
+class TareaCreate(BaseModel):
+    descripcion: str = Field(..., description="Descripción de la tarea")
+    estado: Optional[str] = Field(None, description="Estado de la tarea")
+    prioridad: Optional[str] = Field(None, description="Prioridad de la tarea")
 
-    @field_validator("descripcion")
-    @classmethod
-    def descripcion_no_vacia(cls, v: str) -> str:
-        if not v or v.strip() == "":
-            raise ValueError("La descripción no puede estar vacía")
-        return v
-
-class TareaEntrada(BaseModel):
-    descripcion: str
-    estado: Optional[Literal["pendiente", "en_progreso", "completada"]] = "pendiente"
-    prioridad: Optional[Literal["baja", "media", "alta"]] = "baja"
-
-    @field_validator("descripcion")
-    @classmethod
-    def descripcion_no_vacia(cls, v: str) -> str:
-        if not v or v.strip() == "":
-            raise ValueError("La descripción no puede estar vacía")
-        return v
-
-class TareaModificar(BaseModel):
+class TareaUpdate(BaseModel):
     descripcion: Optional[str] = None
-    estado: Optional[Literal["pendiente", "en_progreso", "completada"]] = None
-    prioridad: Optional[Literal["baja", "media", "alta"]] = None
+    estado: Optional[str] = None
+    prioridad: Optional[str] = None
 
-    @field_validator("descripcion")
-    @classmethod
-    def descripcion_no_vacia(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and (not v or v.strip() == ""):
-            raise ValueError("La descripción no puede estar vacía")
-        return v
-
-class Respuesta(BaseModel):
-    mensaje: str
-
-# Ruta raíz
-@app.get("/")
+# -----------------------
+# Endpoints
+# -----------------------
+@app.get("/", tags=["meta"])
 def raiz():
+    """Información básica de la API"""
     return {
-        "nombre": "API de Tareas Persistente",
+        "nombre": "API de Tareas Persistentes - TP3 (Rearte Franco)",
         "endpoints": [
-            "GET /tareas",
-            "POST /tareas",
-            "PUT /tareas/{id}",
-            "DELETE /tareas/{id}",
-            "GET /tareas/resumen",
-            "PUT /tareas/completar_todas"
-        ]
+            "/tareas [GET, POST]",
+            "/tareas/{id} [PUT, DELETE]",
+            "/tareas/resumen [GET]",
+            "/tareas/completar_todas [PUT]",
+        ],
     }
 
-# Rutas fijas primero
-@app.get("/tareas/resumen")
-def contar_estados():
-    with sqlite3.connect(tareas) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        # Contar total de tareas
-        cursor.execute("SELECT COUNT(*) FROM tareas")
-        total_tareas = cursor.fetchone()[0]
-        # Contar por estado
-        cursor.execute("SELECT estado, COUNT(*) as total FROM tareas GROUP BY estado")
-        por_estado = {"pendiente": 0, "en_progreso": 0, "completada": 0}
-        for row in cursor.fetchall():
-            estado = row["estado"]
-            if estado in por_estado:
-                por_estado[estado] = row["total"]
-        # Contar por prioridad
-        cursor.execute("SELECT prioridad, COUNT(*) as total FROM tareas GROUP BY prioridad")
-        por_prioridad = {"baja": 0, "media": 0, "alta": 0}
-        for row in cursor.fetchall():
-            prioridad = row["prioridad"]
-            if prioridad in por_prioridad:
-                por_prioridad[prioridad] = row["total"]
-        return {
-            "total_tareas": total_tareas,
-            "por_estado": por_estado,
-            "por_prioridad": por_prioridad
-        }
+@app.post("/tareas", status_code=201, tags=["tareas"])
+def crear_tarea(payload: TareaCreate):
+    """
+    Crear una nueva tarea.
+    - descripcion: requerido (Pydantic valida ausencia -> 422)
+    - descripcion no puede ser vacía o solo espacios -> 422
+    - estado default: 'pendiente' si no se pasa
+    - prioridad: opcional, si se pasa debe ser válida
+    """
+    # Validar descripcion (no solo espacios)
+    descripcion = (payload.descripcion or "")
+    if not descripcion.strip():
+        raise HTTPException(status_code=422, detail={"error": "descripcion no puede estar vacía o solo espacios"})
 
-@app.put("/tareas/completar_todas")
-def completar_todo():
-    with sqlite3.connect(tareas) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM tareas")
-        total = cursor.fetchone()[0]
-        if total == 0:
-            return {"mensaje": "No hay tareas para completar"}
-        cursor.execute("UPDATE tareas SET estado = 'completada'")
-        conn.commit()
-        return {"mensaje": "Todas las tareas completadas"}
+    # Estado (default a 'pendiente' si no viene)
+    estado = payload.estado if payload.estado is not None else "pendiente"
+    if estado not in ESTADOS_VALIDOS:
+        raise HTTPException(status_code=422, detail={"error": f"estado inválido. Debe ser uno de: {', '.join(sorted(ESTADOS_VALIDOS))}"})
 
-# Rutas dinámicas después
-@app.get("/tareas", response_model=List[TareaModelo])
+    # Prioridad (si viene, validar)
+    prioridad = payload.prioridad
+    if prioridad is not None and prioridad not in PRIORIDADES_VALIDAS:
+        raise HTTPException(status_code=422, detail={"error": f"prioridad inválida. Debe ser uno de: {', '.join(sorted(PRIORIDADES_VALIDAS))}"})
+
+    fecha = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO tareas (descripcion, estado, fecha_creacion, prioridad) VALUES (?, ?, ?, ?)",
+        (descripcion.strip(), estado, fecha, prioridad)
+    )
+    conn.commit()
+    tarea_id = cur.lastrowid
+    cur.execute("SELECT * FROM tareas WHERE id = ?", (tarea_id,))
+    row = cur.fetchone()
+    conn.close()
+    return JSONResponse(status_code=201, content=row_to_dict(row))
+
+@app.get("/tareas", tags=["tareas"])
 def obtener_tareas(
-    estado: Optional[Literal["pendiente", "en_progreso", "completada"]] = Query(None),
+    estado: Optional[str] = Query(None),
     texto: Optional[str] = Query(None),
-    prioridad: Optional[Literal["baja", "media", "alta"]] = Query(None),
-    orden: Optional[Literal["asc", "desc"]] = Query(None)
+    prioridad: Optional[str] = Query(None),
+    orden: Optional[str] = Query(None),  # "asc" o "desc"
 ):
-    query = "SELECT * FROM tareas WHERE 1=1"
-    params = []
+    """
+    Obtener tareas con filtros combinados y orden por fecha_creacion.
+    Los filtros se aplican solo si son provistos.
+    """
+    sql = "SELECT * FROM tareas"
+    condiciones: List[str] = []
+    params: List[Any] = []
+
     if estado:
-        query += " AND estado = ?"
+        condiciones.append("estado = ?")
         params.append(estado)
-    if texto:
-        query += " AND descripcion LIKE ?"
-        params.append(f"%{texto}%")
     if prioridad:
-        query += " AND prioridad = ?"
+        condiciones.append("prioridad = ?")
         params.append(prioridad)
-    if orden:
-        query += " ORDER BY fecha_creacion " + ("ASC" if orden == "asc" else "DESC")
+    if texto:
+        condiciones.append("LOWER(descripcion) LIKE ?")
+        params.append(f"%{texto.lower()}%")
 
-    with sqlite3.connect(tareas) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        tareas_lista = [
-            {
-                "id": row["id"],
-                "descripcion": row["descripcion"],
-                "estado": row["estado"],
-                "prioridad": row["prioridad"],
-                "fecha_creacion": row["fecha_creacion"]
-            }
-            for row in cursor.fetchall()
-        ]
-        return tareas_lista
+    if condiciones:
+        sql += " WHERE " + " AND ".join(condiciones)
 
-@app.post("/tareas", response_model=TareaModelo, status_code=201)
-def agregar_tarea(tarea: TareaEntrada):
-    with sqlite3.connect(tareas) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO tareas (descripcion, estado, prioridad, fecha_creacion) VALUES (?, ?, ?, ?)",
-            (tarea.descripcion, tarea.estado or "pendiente", tarea.prioridad or "baja", datetime.now().isoformat())
-        )
+    # Orden por fecha_creacion si se pide, defecto ASC si orden es None
+    if orden and orden.lower() == "desc":
+        sql += " ORDER BY fecha_creacion DESC"
+    else:
+        sql += " ORDER BY fecha_creacion ASC"
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(sql, tuple(params))
+    rows = cur.fetchall()
+    conn.close()
+    tareas = [row_to_dict(r) for r in rows]
+    return tareas
+
+@app.put("/tareas/{tarea_id}", tags=["tareas"])
+def actualizar_tarea(tarea_id: int, payload: TareaUpdate):
+    """
+    Actualiza una tarea existente.
+    - Si no existe: 404 con detail={"error": "..."}
+    - Valida campos enviados (descripcion no vacía, estado/prioridad válidos)
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tareas WHERE id = ?", (tarea_id,))
+    row = cur.fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail={"error": "Tarea no encontrada"})
+
+    updates: List[str] = []
+    params: List[Any] = []
+
+    if payload.descripcion is not None:
+        if not payload.descripcion.strip():
+            conn.close()
+            raise HTTPException(status_code=422, detail={"error": "descripcion no puede estar vacía o solo espacios"})
+        updates.append("descripcion = ?")
+        params.append(payload.descripcion.strip())
+
+    if payload.estado is not None:
+        if payload.estado not in ESTADOS_VALIDOS:
+            conn.close()
+            raise HTTPException(status_code=422, detail={"error": f"estado inválido. Debe ser uno de: {', '.join(sorted(ESTADOS_VALIDOS))}"})
+        updates.append("estado = ?")
+        params.append(payload.estado)
+
+    if payload.prioridad is not None:
+        if payload.prioridad not in PRIORIDADES_VALIDAS:
+            conn.close()
+            raise HTTPException(status_code=422, detail={"error": f"prioridad inválida. Debe ser uno de: {', '.join(sorted(PRIORIDADES_VALIDAS))}"})
+        updates.append("prioridad = ?")
+        params.append(payload.prioridad)
+
+    if updates:
+        sql = f"UPDATE tareas SET {', '.join(updates)} WHERE id = ?"
+        params.append(tarea_id)
+        cur.execute(sql, tuple(params))
         conn.commit()
-        tarea_id = cursor.lastrowid
-        cursor.execute("SELECT * FROM tareas WHERE id = ?", (tarea_id,))
-        row = cursor.fetchone()
-        return {
-            "id": row["id"],
-            "descripcion": row["descripcion"],
-            "estado": row["estado"],
-            "prioridad": row["prioridad"],
-            "fecha_creacion": row["fecha_creacion"]
-        }
 
-@app.put("/tareas/{id}", response_model=TareaModelo)
-def modificar_tarea(id: int, tarea_mod: TareaModificar):
-    with sqlite3.connect(tareas) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tareas WHERE id = ?", (id,))
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
-        
-        update_fields = []
-        params = []
-        if tarea_mod.descripcion is not None:
-            update_fields.append("descripcion = ?")
-            params.append(tarea_mod.descripcion)
-        if tarea_mod.estado is not None:
-            update_fields.append("estado = ?")
-            params.append(tarea_mod.estado)
-        if tarea_mod.prioridad is not None:
-            update_fields.append("prioridad = ?")
-            params.append(tarea_mod.prioridad)
-        
-        if update_fields:
-            params.append(id)
-            query = f"UPDATE tareas SET {', '.join(update_fields)} WHERE id = ?"
-            cursor.execute(query, params)
-            conn.commit()
-        
-        cursor.execute("SELECT * FROM tareas WHERE id = ?", (id,))
-        row = cursor.fetchone()
-        return {
-            "id": row["id"],
-            "descripcion": row["descripcion"],
-            "estado": row["estado"],
-            "prioridad": row["prioridad"],
-            "fecha_creacion": row["fecha_creacion"]
-        }
+    cur.execute("SELECT * FROM tareas WHERE id = ?", (tarea_id,))
+    updated = cur.fetchone()
+    conn.close()
+    return row_to_dict(updated)
 
-@app.delete("/tareas/{id}", response_model=Respuesta)
-def borrar_tarea(id: int):
-    with sqlite3.connect(tareas) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tareas WHERE id = ?", (id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
-        cursor.execute("DELETE FROM tareas WHERE id = ?", (id,))
-        conn.commit()
-        return Respuesta(mensaje="Tarea eliminada")
+@app.delete("/tareas/{tarea_id}", tags=["tareas"])
+def eliminar_tarea(tarea_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tareas WHERE id = ?", (tarea_id,))
+    row = cur.fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail={"error": "Tarea no encontrada"})
+    cur.execute("DELETE FROM tareas WHERE id = ?", (tarea_id,))
+    conn.commit()
+    conn.close()
+    return {"mensaje": "Tarea eliminada"}
+
+@app.get("/tareas/resumen", tags=["tareas"])
+def resumen_tareas():
+    """
+    Devuelve resumen con total_tareas, por_estado y por_prioridad.
+    Las claves son los valores existentes en la DB (no se fuerzan all keys).
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) as total FROM tareas")
+    total_row = cur.fetchone()
+    total = total_row["total"] if total_row is not None else 0
+
+    cur.execute("SELECT estado, COUNT(*) as cnt FROM tareas GROUP BY estado")
+    por_estado_rows = cur.fetchall()
+    por_estado = {r["estado"]: r["cnt"] for r in por_estado_rows}
+
+    cur.execute("SELECT prioridad, COUNT(*) as cnt FROM tareas GROUP BY prioridad")
+    por_pri_rows = cur.fetchall()
+    por_prioridad: Dict[str, int] = {}
+    for r in por_pri_rows:
+        key = r["prioridad"] if r["prioridad"] is not None else "sin_prioridad"
+        por_prioridad[key] = r["cnt"]
+
+    conn.close()
+    return {
+        "total_tareas": total,
+        "por_estado": por_estado,
+        "por_prioridad": por_prioridad,
+    }
+
+@app.put("/tareas/completar_todas", tags=["tareas"])
+def completar_todas():
+    """
+    Marca todas las tareas como 'completada'. No espera body.
+    Devuelve mensaje y no provoca validación 422.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE tareas SET estado = 'completada' WHERE estado != 'completada'")
+    conn.commit()
+    conn.close()
+    return {"mensaje": "Todas las tareas marcadas como completadas"}
