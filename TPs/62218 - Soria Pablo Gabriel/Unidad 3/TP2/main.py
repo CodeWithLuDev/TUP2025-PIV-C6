@@ -1,49 +1,11 @@
-try:
-    from fastapi import FastAPI, HTTPException, Query
-    from pydantic import BaseModel, Field
-except ImportError as e:
-    raise ImportError(
-        "Faltan paquetes requeridos: instala las dependencias con:\n"
-        "  python -m venv .venv; .\\.venv\\Scripts\\Activate.ps1; pip install -r TPs/62218 - Soria Pablo Gabriel/Unidad 3/TP2/requirements.txt\n"
-        "O alternativamente: pip install fastapi pydantic uvicorn requests pytest"
-    ) from e
-
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
 app = FastAPI()
 
-# � Agenda de contactos (hardcodeada para los tests)
-contactos_db = [
-    {
-        "nombre": "Juan",
-        "apellido": "Pérez",
-        "edad": 30,
-        "teléfono": "+54 9 11 1234-5678",
-        "email": "juan.perez@example.com",
-    },
-    {
-        "nombre": "José",
-        "apellido": "Gómez",
-        "edad": 25,
-        "teléfono": "+54 9 11 8765-4321",
-        "email": "jose.gomez@example.com",
-    },
-]
-
-
-@app.get("/")
-def raiz():
-    """Endpoint raíz esperado por los tests: mensaje de bienvenida."""
-    return {"mensaje": "Bienvenido a la Agenda de Contactos - ¡Bienvenido!"}
-
-
-@app.get("/contactos")
-def obtener_contactos():
-    """Devuelve la lista de contactos (hardcodeada en memoria)."""
-    return contactos_db
-
-# �🗂️ Base de datos en memoria
+# �️ Base de datos en memoria
 tareas_db = []
 id_counter = 1
 
