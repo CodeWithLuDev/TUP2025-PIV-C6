@@ -8,7 +8,7 @@ app = FastAPI()
 class tarea_entrada(BaseModel):
     descripcion: str
     estado: Literal["pendiente", "en_progreso", "completada"] = "pendiente"
-
+    
     @validator('descripcion')
     def validate_descripcion(cls, v):
         v = v.strip()
@@ -19,7 +19,7 @@ class tarea_entrada(BaseModel):
 class tarea_actualizacion(BaseModel):
     descripcion: Optional[str] = None
     estado: Optional[Literal["pendiente", "en_progreso", "completada"]] = None
-
+    
     @validator('descripcion')
     def validate_descripcion(cls, v):
         if v is not None:
@@ -87,7 +87,7 @@ def resumen_por_estado():
     return resumen
 
 @app.put("/tareas/completar_todas")
-def marcar_todas_completadas():
+def marcar_todas_completadas(datos: tarea_actualizacion = None):
     if not tareas_db:
         return {"mensaje": "No hay tareas para completar"}
     for t in tareas_db:
