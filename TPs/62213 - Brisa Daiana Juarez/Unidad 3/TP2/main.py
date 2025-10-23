@@ -1,107 +1,120 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, constr, validator
 from datetime import datetime
-from typing import List, Optional
-from enum import Enum
+from typing import List, Optional, Dict, Union, Any
+
 
 app = FastAPI()
 
-# Definición del modelo de datos
-class EstadoTarea(str, Enum):
-    PENDIENTE = "pendiente"
-    EN_PROGRESO = "en_progreso"
-    COMPLETADA = "completada"
+
+class TareaCreate(BaseModel):
+    descripcion: str
+    estado: str = "pendiente"
+
+    @validator("estado")
+    def validar_estado(cls, v):
+        if v not in ["pendiente", "en_progreso", "completada"]:
+            raise ValueError("Estado no válido")
+        return v
 
 class Tarea(BaseModel):
-    id: Optional[int] = None
+    id: int
     descripcion: str
-    estado: EstadoTarea = EstadoTarea.PENDIENTE
-    fecha_creacion: Optional[datetime] = None
+    estado: str
+    fecha_creacion: datetime
 
-# Lista para almacenar las tareas en memoria
-tareas = []
-contador_id = 1  # Para generar IDs únicos
+# Base de datos en memoria
+tareas_db = []  # Lista global para almacenar las tareas
+contador_id = 1
 
-@app.get("/")
-async def root():
-    return {"message": "Mini API de Tareas con FastAPI"}
+# Alias para compatibilidad con los tests
+tareas = tareas_db
 
-# Endpoint para obtener todas las tareas
 @app.get("/tareas")
 async def obtener_tareas(estado: Optional[str] = None, texto: Optional[str] = None):
-    if estado and estado not in [e.value for e in EstadoTarea]:
-        raise HTTPException(status_code=400, detail="Estado no válido")
-    
-    tareas_filtradas = tareas
+    tareas_filtradas = tareas_db
     
     if estado:
         tareas_filtradas = [t for t in tareas_filtradas if t.estado == estado]
+    
     if texto:
         tareas_filtradas = [t for t in tareas_filtradas if texto.lower() in t.descripcion.lower()]
     
     return tareas_filtradas
 
-# Endpoint para crear una nueva tarea
 @app.post("/tareas", status_code=201)
-async def crear_tarea(tarea: Tarea):
+async def crear_tarea(tarea: TareaCreate):
     global contador_id
-    if not tarea.descripcion.strip():
+    
+    if not tarea.descripcion or not tarea.descripcion.strip():
         raise HTTPException(status_code=400, detail="La descripción no puede estar vacía")
     
-    tarea.id = contador_id
-    tarea.fecha_creacion = datetime.now()
-    tareas.append(tarea)
+    nueva_tarea = Tarea(
+        id=contador_id,
+        descripcion=tarea.descripcion.strip(),
+        estado=tarea.estado,
+        fecha_creacion=datetime.now()
+    )
+    
+    tareas_db.append(nueva_tarea)
     contador_id += 1
+    
+    return nueva_tarea
+
+@app.put("/tareas/{id}")
+async def actualizar_tarea(id: int, tarea_update: Dict[str, Any]):
+    tarea = next((t for t in tareas_db if t.id == id), None)
+    if not tarea:
+        raise HTTPException(status_code=404, detail="error: La tarea no existe")
+    
+    if "descripcion" in tarea_update:
+        descripcion = str(tarea_update["descripcion"]).strip()
+        if not descripcion:
+            raise HTTPException(status_code=422, detail="error: La descripción no puede estar vacía")
+        tarea.descripcion = descripcion
+    
+    if "estado" in tarea_update:
+        estado = str(tarea_update["estado"])
+        if estado not in ["pendiente", "en_progreso", "completada"]:
+            raise HTTPException(status_code=422, detail="error: Estado no válido")
+        tarea.estado = estado
+    
     return tarea
 
-# Endpoint para actualizar una tarea
-@app.put("/tareas/{id}")
-async def actualizar_tarea(id: int, tarea_actualizada: Tarea):
-    tarea_existente = next((t for t in tareas if t.id == id), None)
-    if not tarea_existente:
-        raise HTTPException(status_code=404, detail="La tarea no existe")
-    
-    if not tarea_actualizada.descripcion.strip():
-        raise HTTPException(status_code=400, detail="La descripción no puede estar vacía")
-    
-    if tarea_actualizada.estado not in [e.value for e in EstadoTarea]:
-        raise HTTPException(status_code=400, detail="Estado no válido")
-    
-    tarea_existente.descripcion = tarea_actualizada.descripcion
-    tarea_existente.estado = tarea_actualizada.estado
-    return tarea_existente
-
-# Endpoint para eliminar una tarea
 @app.delete("/tareas/{id}")
 async def eliminar_tarea(id: int):
-    tarea = next((t for t in tareas if t.id == id), None)
+    tarea = next((t for t in tareas_db if t.id == id), None)
     if not tarea:
-        raise HTTPException(status_code=404, detail="La tarea no existe")
+        raise HTTPException(status_code=404, detail="error: La tarea no existe")
     
-    tareas.remove(tarea)
-    return {"message": "Tarea eliminada exitosamente"}
+    tareas_db.remove(tarea)
+    return {"mensaje": "Tarea eliminada exitosamente"}
 
-# Endpoint para obtener el resumen de tareas por estado
 @app.get("/tareas/resumen")
 async def obtener_resumen():
     resumen = {
-        EstadoTarea.PENDIENTE.value: 0,
-        EstadoTarea.EN_PROGRESO.value: 0,
-        EstadoTarea.COMPLETADA.value: 0
+        "pendiente": 0,
+        "en_progreso": 0,
+        "completada": 0
     }
     
-    for tarea in tareas:
+    for tarea in tareas_db:
         resumen[tarea.estado] += 1
     
     return resumen
 
-# Endpoint para marcar todas las tareas como completadas
-@app.put("/tareas/completar_todas")
-async def completar_todas_las_tareas():
-    if not tareas:
-        return {"message": "No hay tareas para completar"}
+@app.post("/tareas/completar_todas")
+async def completar_todas():
+    if not tareas_db:
+        return {"mensaje": "No hay tareas para completar"}
     
-    for tarea in tareas:
-        tarea.estado = EstadoTarea.COMPLETADA
+    for tarea in tareas_db:
+        tarea.estado = "completada"
     
-    return {"message": f"Se han completado {len(tareas)} tareas"}
+    return {"mensaje": f"Se han completado {len(tareas_db)} tareas"}
+
+@app.get("/")
+async def root():
+    return {"message": "Mini API de Tareas con FastAPI"}
