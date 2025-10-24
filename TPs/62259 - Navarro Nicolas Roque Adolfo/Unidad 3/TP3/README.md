@@ -40,7 +40,7 @@ curl -X POST "http://127.0.0.1:8000/tareas" \
 ```
 
 ### Obtener tareas con filtros
-```bash
+`bash
 # Todas las tareas
 GET /tareas
 
