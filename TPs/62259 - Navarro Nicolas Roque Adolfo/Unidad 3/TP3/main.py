@@ -328,4 +328,4 @@ def delete_tarea(id: int):
         cursor.execute("DELETE FROM tareas WHERE id = ?", (id,))
         conn.commit()
         
-        return {"mensaje": "Tarea eliminada"}
+        return {"mensaje": "Tarea eliminad"}
