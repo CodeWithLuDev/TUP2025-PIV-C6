@@ -355,4 +355,4 @@ curl "http://127.0.0.1:8000/resumen"
 - La API utiliza Pydantic para validar todos los datos de entrada, asegurando que los campos cumplan con las restricciones especificadas.
 - Los filtros combinados permiten búsquedas precisas, y el ordenamiento por fecha de creación es configurable (`asc` o `desc`).
 - La documentación interactiva en `/docs` facilita probar los endpoints directamente desde el navegador.
-- Los tests en `test_TP4.py` verifican todos los requisitos, incluyendo integridad referencial, validaciones y comportamiento de los endpoints.
+- Los tests en `test_TP4.py` verifican todos los requisitos, incluyendo integridad referencial, validaciones y comportamiento de los endpoints..
