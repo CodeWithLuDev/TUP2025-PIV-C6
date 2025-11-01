@@ -1,82 +1,113 @@
-from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, Query, status
+from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+from enum import Enum
 
-app = FastAPI(title="Mini API de Tareas  TP2")
 
+app = FastAPI(title="API Para gestionar tareas")
 
-ESTADOS_VALIDOS = {"pendiente", "en_progreso", "completada"}
+tareas_db = []
+contador_id = 1
 
+class Estado(str, Enum):
+    pendiente = "pendiente"
+    en_progreso = "en_progreso"
+    completada = "completada"
 
 class Tarea(BaseModel):
     id: int
-    descripcion: str = Field(..., min_length=1)
-    estado: str
-    creada: datetime
+    descripcion: str
+    estado: Estado
+    fecha_creacion: datetime
 
+class TareaCreate(BaseModel):
+    descripcion: str
+    estado: Optional[Estado] = Estado.pendiente
 
-class TareaInput(BaseModel):
-    descripcion: str = Field(..., min_length=1)
-    estado: str
+class TareaUpdate(BaseModel): 
+    descripcion: Optional[str] = None
+    estado: Optional[Estado] = None
 
+def validar_estado(estado: str):
+    estados_validos = {"pendiente", "en_progreso", "completada"}
+    if estado not in estados_validos:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
+            detail={"error": "Estado inválido. Debe ser 'pendiente', 'en_progreso' o 'completada'"}
+        )
 
-tareas: List[Tarea] = []
-contador_id = 1
+@app.get("/tareas/resumen")
+def get_resumen():
+    conteo = {
+        "pendiente": 0,
+        "en_progreso": 0,
+        "completada": 0
+    }
+    for tarea in tareas_db:
+        if tarea.estado in conteo:
+            conteo[tarea.estado] += 1
+    return conteo
 
-
-@app.post("/tareas", response_model=Tarea)
-def crear_tarea(data: TareaInput):
-    global contador_id
-    if data.estado not in ESTADOS_VALIDOS:
-        raise HTTPException(status_code=400, detail={"error": "Estado inválido"})
-    nueva = Tarea(id=contador_id, descripcion=data.descripcion, estado=data.estado, creada=datetime.now())
-    tareas.append(nueva)
-    contador_id += 1
-    return nueva
-
+@app.put("/tareas/completar_todas", status_code=status.HTTP_200_OK)
+def completar_todas():
+    if len(tareas_db) == 0:
+        return {"mensaje": "No hay tareas"}
+    
+    for tarea in tareas_db:
+        tarea.estado = Estado.completada
+    return {"mensaje": "Todas las tareas marcadas como completadas"}
 
 @app.get("/tareas", response_model=List[Tarea])
-def listar_tareas(estado: Optional[str] = Query(None), texto: Optional[str] = Query(None)):
-    resultado = tareas
+def get_tareas(estado: Optional[str] = Query(None), texto: Optional[str] = Query(None)):
+    resultado = tareas_db
     if estado:
+        validar_estado(estado)  
         resultado = [t for t in resultado if t.estado == estado]
     if texto:
         resultado = [t for t in resultado if texto.lower() in t.descripcion.lower()]
     return resultado
 
+@app.post("/tareas", response_model=Tarea, status_code=status.HTTP_201_CREATED)
+def create_tarea(tarea: TareaCreate):
+    global contador_id
+    if not tarea.descripcion.strip():  
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
+            detail={"error": "La descripción no puede estar vacía"}
+        )
+    validar_estado(tarea.estado)  
+    nueva_tarea = Tarea(
+        id=contador_id,
+        descripcion=tarea.descripcion,
+        estado=tarea.estado,
+        fecha_creacion=datetime.now()
+    )
+    tareas_db.append(nueva_tarea)
+    contador_id += 1
+    return nueva_tarea
 
 @app.put("/tareas/{id}", response_model=Tarea)
-def modificar_tarea(id: int, data: TareaInput):
-    for t in tareas:
-        if t.id == id:
-            if data.estado not in ESTADOS_VALIDOS:
-                raise HTTPException(status_code=400, detail={"error": "Estado inválido"})
-            t.descripcion = data.descripcion
-            t.estado = data.estado
-            return t
+def update_tarea(id: int, tarea_update: TareaUpdate):
+    for tarea in tareas_db:
+        if tarea.id == id:
+            if tarea_update.descripcion is not None:
+                if not tarea_update.descripcion.strip():
+                    raise HTTPException(
+                        status_code=400, 
+                        detail={"error": "La descripción no puede estar vacía"}
+                    )
+                tarea.descripcion = tarea_update.descripcion
+            if tarea_update.estado is not None:
+                validar_estado(tarea_update.estado)
+                tarea.estado = tarea_update.estado
+            return tarea
     raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
-
 
 @app.delete("/tareas/{id}")
-def eliminar_tarea(id: int):
-    for t in tareas:
-        if t.id == id:
-            tareas.remove(t)
+def delete_tarea(id: int):
+    for i, tarea in enumerate(tareas_db):
+        if tarea.id == id:
+            del tareas_db[i]
             return {"mensaje": "Tarea eliminada"}
     raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
-
-
-@app.get("/tareas/resumen")
-def resumen_tareas():
-    resumen = {estado: 0 for estado in ESTADOS_VALIDOS}
-    for t in tareas:
-        resumen[t.estado] += 1
-    return resumen
-
-
-@app.put("/tareas/completar_todas")
-def completar_todas():
-    for t in tareas:
-        t.estado = "completada"
-    return {"mensaje": "Todas las tareas fueron marcadas como completadas"}
