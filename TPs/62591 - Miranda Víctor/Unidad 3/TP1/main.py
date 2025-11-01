@@ -2,10 +2,10 @@ from fastapi import FastAPI
 from typing import List
 from pydantic import BaseModel
 
-# Crear una instancia de FastAPI
+
 app = FastAPI()
 
-# Definir el modelo para los contactos usando Pydantic
+
 class Contacto(BaseModel):
     nombre: str
     apellido: str
@@ -13,7 +13,7 @@ class Contacto(BaseModel):
     telefono: str
     email: str
 
-# Lista estática de contactos (hardcoded)
+
 contactos: List[Contacto] = [
     Contacto(nombre="Juan", apellido="Pérez", edad=30, telefono="3815551234", email="jperez@gmail.com"),
     Contacto(nombre="José", apellido="Gómez", edad=25, telefono="3815551235", email="jgomez@gmail.com"),
@@ -27,12 +27,12 @@ contactos: List[Contacto] = [
     Contacto(nombre="Laura", apellido="Torres", edad=26, telefono="3815551243", email="ltorres@gmail.com")
 ]
 
-# Endpoint raíz
+
 @app.get("/")
 def raiz():
     return {"mensaje": "Bienvenido a la Agenda de Contactos API"}
 
-# Endpoint para listar todos los contactos
+
 @app.get("/contactos", response_model=List[Contacto])
 def listar_contactos():
     return contactos
