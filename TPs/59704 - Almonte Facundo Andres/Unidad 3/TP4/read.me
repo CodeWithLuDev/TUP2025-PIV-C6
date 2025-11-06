@@ -1,0 +1,714 @@
+# 📋 Sistema de Gestión de Proyectos y Tareas
+
+API RESTful construida con FastAPI y SQLite para gestionar proyectos y sus tareas asociadas, con soporte para filtros, estadísticas y relaciones en cascada.
+
+---
+
+## 📑 Tabla de Contenidos
+
+- [Características](#-características)
+- [Requisitos Previos](#-requisitos-previos)
+- [Instalación](#-instalación)
+- [Iniciar el Servidor](#-iniciar-el-servidor)
+- [Estructura de la Base de Datos](#-estructura-de-la-base-de-datos)
+- [Relaciones entre Tablas](#-relaciones-entre-tablas)
+- [Endpoints de la API](#-endpoints-de-la-api)
+- [Ejemplos de Uso](#-ejemplos-de-uso)
+
+---
+
+## ✨ Características
+
+- ✅ CRUD completo para proyectos y tareas
+- ✅ Relaciones con integridad referencial (CASCADE)
+- ✅ Filtros avanzados (por estado, prioridad, proyecto)
+- ✅ Estadísticas y resúmenes
+- ✅ Validaciones automáticas con Pydantic
+- ✅ Documentación interactiva (Swagger/ReDoc)
+
+---
+
+## 🔧 Requisitos Previos
+
+- Python 3.8 o superior
+- pip (gestor de paquetes de Python)
+
+---
+
+## 📦 Instalación
+
+### 1. Clonar o descargar el proyecto
+
+```bash
+cd tu-proyecto
+```
+
+### 2. Crear entorno virtual (recomendado)
+
+```bash
+# Windows
+python -m venv venv
+venv\Scripts\activate
+
+# Linux/Mac
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Instalar dependencias
+
+```bash
+pip install fastapi uvicorn pydantic
+```
+
+### 4. Verificar estructura de archivos
+
+```
+proyecto/
+│
+├── main.py          # Archivo principal con la API
+├── models.py        # Modelos Pydantic
+└── proyectos.db     # Base de datos (se crea automáticamente)
+```
+
+---
+
+## 🚀 Iniciar el Servidor
+
+### Método 1: Ejecutar directamente
+
+```bash
+python main.py
+```
+
+### Método 2: Usar Uvicorn manualmente
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Parámetros:**
+- `--reload`: Recarga automática al detectar cambios (desarrollo)
+- `--host 0.0.0.0`: Permite acceso desde otras máquinas
+- `--port 8000`: Puerto del servidor
+
+### Acceder a la documentación
+
+Una vez iniciado el servidor:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **API Base**: http://localhost:8000
+
+---
+
+## 🗄️ Estructura de la Base de Datos
+
+### Diagrama de Relaciones
+
+```
+┌─────────────────────────────┐
+│        PROYECTOS            │
+├─────────────────────────────┤
+│ id (PK)          INTEGER    │
+│ nombre           TEXT       │◄─────┐
+│ descripcion      TEXT       │      │
+│ fecha_creacion   TEXT       │      │
+└─────────────────────────────┘      │
+                                      │
+                                      │ ON DELETE CASCADE
+                                      │
+                                      │
+┌─────────────────────────────┐      │
+│          TAREAS             │      │
+├─────────────────────────────┤      │
+│ id (PK)          INTEGER    │      │
+│ descripcion      TEXT       │      │
+│ estado           TEXT       │      │
+│ prioridad        TEXT       │      │
+│ fecha_creacion   TEXT       │      │
+│ proyecto_id (FK) INTEGER    │──────┘
+└─────────────────────────────┘
+```
+
+### Tabla: `proyectos`
+
+| Campo           | Tipo    | Restricciones                    | Descripción                        |
+|-----------------|---------|----------------------------------|------------------------------------|
+| id              | INTEGER | PRIMARY KEY, AUTOINCREMENT       | Identificador único del proyecto   |
+| nombre          | TEXT    | NOT NULL, UNIQUE                 | Nombre del proyecto                |
+| descripcion     | TEXT    | NULL                             | Descripción opcional               |
+| fecha_creacion  | TEXT    | NOT NULL                         | Fecha de creación (ISO 8601)       |
+
+### Tabla: `tareas`
+
+| Campo           | Tipo    | Restricciones                     | Descripción                        |
+|-----------------|---------|-----------------------------------|------------------------------------|
+| id              | INTEGER | PRIMARY KEY, AUTOINCREMENT        | Identificador único de la tarea    |
+| descripcion     | TEXT    | NOT NULL                          | Descripción de la tarea            |
+| estado          | TEXT    | NOT NULL, DEFAULT 'pendiente'     | Estado: pendiente, en_progreso, completada |
+| prioridad       | TEXT    | NOT NULL, DEFAULT 'media'         | Prioridad: baja, media, alta       |
+| fecha_creacion  | TEXT    | NOT NULL                          | Fecha de creación (ISO 8601)       |
+| proyecto_id     | INTEGER | FOREIGN KEY → proyectos(id)       | Referencia al proyecto padre       |
+
+---
+
+## 🔗 Relaciones entre Tablas
+
+### Relación Uno a Muchos (1:N)
+
+**Un proyecto puede tener muchas tareas, pero cada tarea pertenece a un solo proyecto.**
+
+```
+PROYECTOS (1) ──────┐
+                    │
+                    │ tiene muchas
+                    │
+                    └──────> TAREAS (N)
+```
+
+### Foreign Key con CASCADE
+
+La clave foránea `proyecto_id` en la tabla `tareas` implementa la restricción:
+
+```sql
+FOREIGN KEY (proyecto_id) REFERENCES proyectos(id) ON DELETE CASCADE
+```
+
+**Comportamiento:**
+- ✅ **Integridad referencial**: No se pueden crear tareas con un `proyecto_id` inexistente
+- ✅ **Eliminación en cascada**: Al eliminar un proyecto, todas sus tareas se eliminan automáticamente
+- ✅ **Protección de datos**: Evita tareas huérfanas en la base de datos
+
+**Ejemplo práctico:**
+
+```
+Proyecto "Web App" (id=1)
+  ├── Tarea "Diseñar UI" (id=1, proyecto_id=1)
+  ├── Tarea "Backend API" (id=2, proyecto_id=1)
+  └── Tarea "Testing" (id=3, proyecto_id=1)
+
+Si eliminas el proyecto con id=1:
+  → Las tareas 1, 2 y 3 se eliminan automáticamente
+```
+
+---
+
+## 🌐 Endpoints de la API
+
+### Proyectos
+
+| Método | Endpoint                     | Descripción                           |
+|--------|------------------------------|---------------------------------------|
+| POST   | `/proyectos`                 | Crear un nuevo proyecto               |
+| GET    | `/proyectos`                 | Listar todos los proyectos            |
+| GET    | `/proyectos/{proyecto_id}`   | Obtener un proyecto específico        |
+| PUT    | `/proyectos/{proyecto_id}`   | Actualizar un proyecto                |
+| DELETE | `/proyectos/{proyecto_id}`   | Eliminar un proyecto (y sus tareas)   |
+| GET    | `/proyectos/{proyecto_id}/resumen` | Estadísticas del proyecto    |
+
+### Tareas
+
+| Método | Endpoint                                | Descripción                          |
+|--------|-----------------------------------------|--------------------------------------|
+| POST   | `/proyectos/{proyecto_id}/tareas`       | Crear tarea en un proyecto           |
+| GET    | `/proyectos/{proyecto_id}/tareas`       | Listar tareas de un proyecto         |
+| GET    | `/tareas`                               | Listar todas las tareas (con filtros)|
+| PUT    | `/tareas/{tarea_id}`                    | Actualizar una tarea                 |
+| DELETE | `/tareas/{tarea_id}`                    | Eliminar una tarea                   |
+
+### Resumen
+
+| Método | Endpoint    | Descripción                           |
+|--------|-------------|---------------------------------------|
+| GET    | `/resumen`  | Estadísticas generales del sistema    |
+
+---
+
+## 📖 Ejemplos de Uso
+
+### 1. Crear un Proyecto
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:8000/proyectos \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nombre": "Aplicación Web E-commerce",
+    "descripcion": "Plataforma de ventas online con carrito de compras"
+  }'
+```
+
+**JSON Body:**
+
+```json
+{
+  "nombre": "Aplicación Web E-commerce",
+  "descripcion": "Plataforma de ventas online con carrito de compras"
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "id": 1,
+  "nombre": "Aplicación Web E-commerce",
+  "descripcion": "Plataforma de ventas online con carrito de compras",
+  "fecha_creacion": "2024-11-06T15:30:00.123456",
+  "total_tareas": null
+}
+```
+
+---
+
+### 2. Listar Todos los Proyectos
+
+**Request:**
+
+```bash
+curl -X GET http://localhost:8000/proyectos
+```
+
+**Con filtro por nombre:**
+
+```bash
+curl -X GET "http://localhost:8000/proyectos?nombre=web"
+```
+
+**Response (200):**
+
+```json
+[
+  {
+    "id": 1,
+    "nombre": "Aplicación Web E-commerce",
+    "descripcion": "Plataforma de ventas online con carrito de compras",
+    "fecha_creacion": "2024-11-06T15:30:00.123456",
+    "total_tareas": null
+  },
+  {
+    "id": 2,
+    "nombre": "Web Corporativa",
+    "descripcion": "Sitio web institucional",
+    "fecha_creacion": "2024-11-06T16:00:00.123456",
+    "total_tareas": null
+  }
+]
+```
+
+---
+
+### 3. Obtener un Proyecto Específico
+
+**Request:**
+
+```bash
+curl -X GET http://localhost:8000/proyectos/1
+```
+
+**Response (200):**
+
+```json
+{
+  "id": 1,
+  "nombre": "Aplicación Web E-commerce",
+  "descripcion": "Plataforma de ventas online con carrito de compras",
+  "fecha_creacion": "2024-11-06T15:30:00.123456",
+  "total_tareas": 5
+}
+```
+
+---
+
+### 4. Actualizar un Proyecto
+
+**Request:**
+
+```bash
+curl -X PUT http://localhost:8000/proyectos/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nombre": "E-commerce Mejorado",
+    "descripcion": "Plataforma con integración de pagos"
+  }'
+```
+
+**JSON Body (parcial):**
+
+```json
+{
+  "descripcion": "Nueva descripción actualizada"
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "id": 1,
+  "nombre": "E-commerce Mejorado",
+  "descripcion": "Plataforma con integración de pagos",
+  "fecha_creacion": "2024-11-06T15:30:00.123456",
+  "total_tareas": null
+}
+```
+
+---
+
+### 5. Eliminar un Proyecto
+
+**Request:**
+
+```bash
+curl -X DELETE http://localhost:8000/proyectos/1
+```
+
+**Response (200):**
+
+```json
+{
+  "mensaje": "Proyecto eliminado exitosamente",
+  "tareas_eliminadas": 5
+}
+```
+
+---
+
+### 6. Crear una Tarea
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:8000/proyectos/1/tareas \
+  -H "Content-Type: application/json" \
+  -d '{
+    "descripcion": "Implementar sistema de login",
+    "estado": "pendiente",
+    "prioridad": "alta"
+  }'
+```
+
+**JSON Body:**
+
+```json
+{
+  "descripcion": "Implementar sistema de login",
+  "estado": "en_progreso",
+  "prioridad": "alta"
+}
+```
+
+**Valores válidos:**
+- **estado**: `pendiente`, `en_progreso`, `completada`
+- **prioridad**: `baja`, `media`, `alta`
+
+**Response (201):**
+
+```json
+{
+  "id": 1,
+  "descripcion": "Implementar sistema de login",
+  "estado": "pendiente",
+  "prioridad": "alta",
+  "fecha_creacion": "2024-11-06T16:45:00.123456",
+  "proyecto_id": 1
+}
+```
+
+---
+
+### 7. Listar Tareas de un Proyecto
+
+**Request:**
+
+```bash
+curl -X GET http://localhost:8000/proyectos/1/tareas
+```
+
+**Response (200):**
+
+```json
+[
+  {
+    "id": 1,
+    "descripcion": "Implementar sistema de login",
+    "estado": "pendiente",
+    "prioridad": "alta",
+    "fecha_creacion": "2024-11-06T16:45:00.123456",
+    "proyecto_id": 1
+  },
+  {
+    "id": 2,
+    "descripcion": "Diseñar base de datos",
+    "estado": "completada",
+    "prioridad": "media",
+    "fecha_creacion": "2024-11-06T17:00:00.123456",
+    "proyecto_id": 1
+  }
+]
+```
+
+---
+
+### 8. Listar Todas las Tareas con Filtros
+
+**Request básico:**
+
+```bash
+curl -X GET http://localhost:8000/tareas
+```
+
+**Con filtros:**
+
+```bash
+# Filtrar por estado
+curl -X GET "http://localhost:8000/tareas?estado=pendiente"
+
+# Filtrar por prioridad
+curl -X GET "http://localhost:8000/tareas?prioridad=alta"
+
+# Filtrar por proyecto
+curl -X GET "http://localhost:8000/tareas?proyecto_id=1"
+
+# Múltiples filtros con ordenamiento
+curl -X GET "http://localhost:8000/tareas?estado=en_progreso&prioridad=alta&orden=desc"
+```
+
+**Parámetros disponibles:**
+- `estado`: pendiente | en_progreso | completada
+- `prioridad`: baja | media | alta
+- `proyecto_id`: ID numérico del proyecto
+- `orden`: asc | desc
+
+**Response (200):**
+
+```json
+[
+  {
+    "id": 3,
+    "descripcion": "Configurar servidor de producción",
+    "estado": "pendiente",
+    "prioridad": "alta",
+    "fecha_creacion": "2024-11-06T18:00:00.123456",
+    "proyecto_id": 2
+  }
+]
+```
+
+---
+
+### 9. Actualizar una Tarea
+
+**Request:**
+
+```bash
+curl -X PUT http://localhost:8000/tareas/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "estado": "completada"
+  }'
+```
+
+**JSON Body (actualización completa):**
+
+```json
+{
+  "descripcion": "Implementar sistema de login con OAuth",
+  "estado": "en_progreso",
+  "prioridad": "alta",
+  "proyecto_id": 1
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "id": 1,
+  "descripcion": "Implementar sistema de login con OAuth",
+  "estado": "en_progreso",
+  "prioridad": "alta",
+  "fecha_creacion": "2024-11-06T16:45:00.123456",
+  "proyecto_id": 1
+}
+```
+
+---
+
+### 10. Eliminar una Tarea
+
+**Request:**
+
+```bash
+curl -X DELETE http://localhost:8000/tareas/1
+```
+
+**Response (200):**
+
+```json
+{
+  "mensaje": "Tarea eliminada exitosamente"
+}
+```
+
+---
+
+### 11. Resumen de un Proyecto
+
+**Request:**
+
+```bash
+curl -X GET http://localhost:8000/proyectos/1/resumen
+```
+
+**Response (200):**
+
+```json
+{
+  "proyecto_id": 1,
+  "proyecto_nombre": "Aplicación Web E-commerce",
+  "total_tareas": 8,
+  "por_estado": {
+    "pendiente": 3,
+    "en_progreso": 2,
+    "completada": 3
+  },
+  "por_prioridad": {
+    "baja": 2,
+    "media": 4,
+    "alta": 2
+  }
+}
+```
+
+---
+
+### 12. Resumen General del Sistema
+
+**Request:**
+
+```bash
+curl -X GET http://localhost:8000/resumen
+```
+
+**Response (200):**
+
+```json
+{
+  "total_proyectos": 5,
+  "total_tareas": 23,
+  "tareas_por_estado": {
+    "pendiente": 8,
+    "en_progreso": 6,
+    "completada": 9
+  },
+  "proyecto_con_mas_tareas": {
+    "id": 1,
+    "nombre": "Aplicación Web E-commerce",
+    "cantidad_tareas": 8
+  }
+}
+```
+
+---
+
+## 🛠️ Manejo de Errores
+
+### Códigos de Estado HTTP
+
+| Código | Significado                  | Cuándo ocurre                                    |
+|--------|------------------------------|--------------------------------------------------|
+| 200    | OK                           | Operación exitosa                                |
+| 201    | Created                      | Recurso creado exitosamente                      |
+| 400    | Bad Request                  | Datos inválidos o proyecto inexistente           |
+| 404    | Not Found                    | Recurso no encontrado                            |
+| 409    | Conflict                     | Nombre de proyecto duplicado                     |
+| 422    | Unprocessable Entity         | Error de validación (Pydantic)                   |
+
+### Ejemplos de Respuestas de Error
+
+**404 - Proyecto no encontrado:**
+
+```json
+{
+  "detail": "Proyecto no encontrado"
+}
+```
+
+**409 - Nombre duplicado:**
+
+```json
+{
+  "detail": "Ya existe un proyecto con ese nombre"
+}
+```
+
+**422 - Error de validación:**
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "estado"],
+      "msg": "Estado debe ser uno de: pendiente, en_progreso, completada",
+      "type": "value_error"
+    }
+  ]
+}
+```
+
+---
+
+## 📝 Notas Importantes
+
+1. **Base de datos automática**: El archivo `proyectos.db` se crea automáticamente al iniciar el servidor por primera vez.
+
+2. **Validaciones estrictas**: Pydantic valida automáticamente todos los datos de entrada. Los valores inválidos retornan error 422.
+
+3. **Eliminación en cascada**: Al eliminar un proyecto, todas sus tareas se eliminan automáticamente para mantener la integridad.
+
+4. **Fechas en formato ISO 8601**: Todas las fechas se almacenan como strings en formato ISO (ej: `2024-11-06T15:30:00.123456`).
+
+5. **Campos opcionales**: Los campos marcados como `Optional` pueden ser `null` o omitirse en actualizaciones parciales.
+
+---
+
+## 🧪 Pruebas Rápidas
+
+### Script de prueba completo:
+
+```bash
+# 1. Crear proyecto
+curl -X POST http://localhost:8000/proyectos \
+  -H "Content-Type: application/json" \
+  -d '{"nombre": "Test Project", "descripcion": "Proyecto de prueba"}'
+
+# 2. Crear tarea
+curl -X POST http://localhost:8000/proyectos/1/tareas \
+  -H "Content-Type: application/json" \
+  -d '{"descripcion": "Tarea de prueba", "prioridad": "alta"}'
+
+# 3. Ver resumen
+curl -X GET http://localhost:8000/proyectos/1/resumen
+
+# 4. Listar tareas con filtros
+curl -X GET "http://localhost:8000/tareas?estado=pendiente"
+```
+
+---
+
+## 📚 Recursos Adicionales
+
+- **Documentación FastAPI**: https://fastapi.tiangolo.com
+- **Documentación Pydantic**: https://docs.pydantic.dev
+- **SQLite Documentation**: https://www.sqlite.org/docs.html
+
+---
+
+## 👤 Autor
+
+Sistema desarrollado con FastAPI para la gestión eficiente de proyectos y tareas.
+
+**Versión**: 1.0.0
